@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NASA Weather App</title>
+    <style>
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to NASA Weather App!</h1>
+    <p id="message">Loading data from backend...</p>
+    <div id="map"></div>
+
+    <div>
+        <label for="date">Дата (ГГГГ-ММ-ДД):</label>
+        <input type="date" id="date" value="2003-01-01">
+    </div>
+    <button id="getWeatherButton">Получить погоду</button>
+
+    <div id="options">
+        <h3>Опции анализа:</h3>
+        <div>
+            <label for="dataSource">Источник данных:</label>
+            <select id="dataSource">
+                <option value="nasa">NASA POWER</option>
+                <option value="openmeteo">Open-Meteo</option>
+            </select>
+        </div>
+        <div>
+            <input type="checkbox" id="detailedAnalysis" checked>
+            <label for="detailedAnalysis">Детальный анализ</label>
+        </div>
+        <div>
+            <input type="checkbox" id="multiSource" checked>
+            <label for="multiSource">Мультисорсный режим (консенсус)</label>
+        </div>
+        <div class="unit-selectors">
+            <h4>Единицы измерения:</h4>
+            <div>
+                <label for="tempUnit">Температура:</label>
+                <select id="tempUnit">
+                    <option value="celsius">°C</option>
+                    <option value="fahrenheit">°F</option>
+                </select>
+            </div>
+            <div>
+                <label for="windUnit">Скорость ветра:</label>
+                <select id="windUnit">
+                    <option value="ms">м/с</option>
+                    <option value="kmh">км/ч</option>
+                    <option value="mph">миль/ч</option>
+                </select>
+            </div>
+            <div>
+                <label for="precipUnit">Осадки:</label>
+                <select id="precipUnit">
+                    <option value="mm">мм</option>
+                    <option value="inches">дюймы</option>
+                </select>
+            </div>
+            <div>
+                <label for="pressureUnit">Давление:</label>
+                <select id="pressureUnit">
+                    <option value="kpa">кПа</option>
+                    <option value="mmhg">мм рт.ст.</option>
+                    <option value="inhg">дюймы рт.ст.</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div id="weatherData"></div>
+
+    <script>
+        let map;
+        let googleMapsApiKey = '';
+        let selectedLat = -34.397; // Default latitude
+        let selectedLng = 150.644; // Default longitude
+
+        async function initMap() {
+            if (!googleMapsApiKey) {
+                console.error('Google Maps API Key not loaded.');
+                return;
+            }
+            const { Map } = await google.maps.importLibrary("maps");
+
+            map = new Map(document.getElementById("map"), {
+                center: { lat: selectedLat, lng: selectedLng },
+                zoom: 8,
+            });
+
+            map.addListener('click', (event) => {
+                selectedLat = event.latLng.lat();
+                selectedLng = event.latLng.lng();
+                document.getElementById('message').textContent = `Выбрано: Широта ${selectedLat.toFixed(4)}, Долгота ${selectedLng.toFixed(4)}`;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('http://127.0.0.1:5000/api/google-maps-api-key')
+                .then(response => response.json())
+                .then(data => {
+                    googleMapsApiKey = data.apiKey;
+                    const script = document.createElement('script');
+                    script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap`;
+                    script.async = true;
+                    document.head.appendChild(script);
+                })
+                .catch(error => {
+                    console.error('Error fetching Google Maps API Key:', error);
+                    document.getElementById('message').textContent = 'Error loading Google Maps.';
+                });
+
+            document.getElementById('getWeatherButton').addEventListener('click', async () => {
+                const date = document.getElementById('date').value;
+                const dataSource = document.getElementById('dataSource').value;
+                const detailedAnalysis = document.getElementById('detailedAnalysis').checked;
+                const multiSource = document.getElementById('multiSource').checked;
+                const tempUnit = document.getElementById('tempUnit').value;
+                const windUnit = document.getElementById('windUnit').value;
+                const precipUnit = document.getElementById('precipUnit').value;
+                const pressureUnit = document.getElementById('pressureUnit').value;
+
+
+                if (!selectedLat || !selectedLng || !date) {
+                    alert('Пожалуйста, выберите местоположение на карте и укажите дату.');
+                    return;
+                }
+
+                document.getElementById('message').textContent = 'Загрузка данных о погоде...';
+
+                try {
+                    const response = await fetch('http://127.0.0.1:5000/api/analyze', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            latitude: selectedLat,
+                            longitude: selectedLng,
+                            date: date,
+                            detailed: detailedAnalysis,
+                            multi_source: multiSource,
+                            temp_unit: tempUnit,
+                            wind_unit: windUnit,
+                            precip_unit: precipUnit,
+                            pressure_unit: pressureUnit,
+                        }),
+                    });
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        displayWeatherData(data);
+                    } else {
+                        document.getElementById('weatherData').innerHTML = `<p style="color: red;">Ошибка: ${data.error}</p>`;
+                    }
+                } catch (error) {
+                    console.error('Error fetching weather data:', error);
+                    document.getElementById('weatherData').innerHTML = `<p style="color: red;">Ошибка при получении данных о погоде.</p>`;
+                }
+            });
+        });
+
+        function displayWeatherData(data) {
+            const weatherDataDiv = document.getElementById('weatherData');
+            weatherDataDiv.innerHTML = ''; // Clear previous data
+
+            if (data && data.error) {
+                weatherDataDiv.innerHTML = `<p style="color: red;">Ошибка: ${data.error}</p>`;
+                return;
+            }
+
+            if (!data) {
+                weatherDataDiv.innerHTML = '<p>Нет данных о погоде для выбранного местоположения и даты.</p>';
+                return;
+            }
+
+            let html = `<h2>Погода на ${data.date} (${data.date_name}):</h2>`;
+            if (data.metadata && data.metadata.data_source) {
+                html += `<p>Источник данных: <strong>${data.metadata.data_source}</strong></p>`;
+            }
+
+            // Display Probabilities
+            if (data.probabilities && Object.keys(data.probabilities).length > 0) {
+                html += '<h3>Вероятности:</h3><ul>';
+                for (const key in data.probabilities) {
+                    html += `<li>${key}: ${(data.probabilities[key] * 100).toFixed(1)}%</li>`;
+                }
+                html += '</ul>';
+            }
+
+            // Display Statistics
+            if (data.statistics && Object.keys(data.statistics).length > 0) {
+                html += '<h3>Статистика:</h3>';
+                for (const category in data.statistics) {
+                    html += `<h4>${category.replace(/_/g, ' ')}:</h4><ul>`;
+                    for (const stat in data.statistics[category]) {
+                        let value = data.statistics[category][stat];
+                        if (typeof value === 'number') {
+                            value = value.toFixed(2);
+                        }
+                        const unit = data.statistics[category].unit || '';
+                        html += `<li>${stat.replace(/_/g, ' ')}: ${value} ${unit}</li>`;
+                    }
+                    html += '</ul>';
+                }
+            }
+
+            // Display Multi-Source Parameters (if available)
+            if (data.parameters && Object.keys(data.parameters).length > 0) {
+                html += '<h3>Мультисорсный анализ:</h3>';
+                for (const param in data.parameters) {
+                    const paramData = data.parameters[param];
+                    html += `<h4>${param.replace(/_/g, ' ')}:</h4>`;
+                    html += `<ul>`;
+                    html += `<li>Консенсусное значение: ${paramData.value !== null ? paramData.value.toFixed(2) : 'N/A'}</li>`;
+                    html += `<li>Уровень доверия: ${paramData.confidence}</li>`;
+                    html += `<li>Уровень согласованности: ${(paramData.agreement_level * 100).toFixed(1)}%</li>`;
+                    if (paramData.source_values) {
+                        html += `<li>Значения по источникам:<ul>`;
+                        for (const src in paramData.source_values) {
+                            html += `<li>${src.replace(/_/g, ' ')}: ${paramData.source_values[src].toFixed(2)}</li>`;
+                        }
+                        html += `</ul></li>`;
+                    }
+                    html += `</ul>`;
+                }
+            }
+            
+            weatherDataDiv.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
