@@ -2,6 +2,12 @@
 
 # dependencies
 node_modules/
+venv/ # Python virtual environment
+env/ # Python virtual environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 # Expo
 .expo/
@@ -17,6 +23,8 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+/ios
+/android
 
 # Metro
 .metro-health-check*
@@ -25,17 +33,27 @@ expo-env.d.ts
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+# Python
+.pytest_cache/
+.ipynb_checkpoints/
 
 # macOS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
 *.tsbuildinfo
 
-# generated native folders
-/ios
-/android
+# generated folders
+data/cache/
+.vscode/
