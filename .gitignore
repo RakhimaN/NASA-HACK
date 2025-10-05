@@ -57,3 +57,4 @@ Thumbs.db
 # generated folders
 data/cache/
 .vscode/
+venv/

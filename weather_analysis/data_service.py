@@ -265,6 +265,21 @@ class OpenMeteoAPI(WeatherDataSource):
         Note: Open-Meteo возвращает данные по дням, а не климатологию
         Нужно агрегировать по дням года самостоятельно
         """
+        # Проверяем кэш сначала
+        import hashlib
+        cache_key = hashlib.md5(
+            f"openmeteo_{latitude}_{longitude}_{start_year}_{end_year}".encode()
+        ).hexdigest()
+        cache_file = self.cache_dir / f"{cache_key}.parquet"
+        
+        if cache_file.exists():
+            try:
+                df = pd.read_parquet(cache_file)
+                print(f"✓ Open-Meteo: Данные загружены из кэша")
+                return df
+            except Exception as e:
+                print(f"⚠ Ошибка чтения кэша: {e}")
+        
         print(f"🌍 Запрос данных от Open-Meteo API...")
         print(f"   Локация: ({latitude}, {longitude})")
         print(f"   Период: {start_year}-{end_year}")
@@ -272,6 +287,9 @@ class OpenMeteoAPI(WeatherDataSource):
         all_data = []
         
         # Open-Meteo ограничивает запросы по годам
+        # ВАЖНО: Добавляем задержки чтобы не превысить rate limit
+        import time
+        
         for year in range(start_year, end_year + 1):
             start_date = f"{year}-01-01"
             end_date = f"{year}-12-31"
@@ -305,6 +323,17 @@ class OpenMeteoAPI(WeatherDataSource):
                 
                 all_data.append(df_year)
                 
+                # Задержка 0.2 секунды между запросами (max 5 req/sec для бесплатного плана)
+                time.sleep(0.2)
+                
+            except requests.exceptions.HTTPError as e:
+                if '429' in str(e):
+                    print(f"⚠ Rate limit достигнут на году {year}, пропускаем...")
+                    # Не прерываем, продолжаем с уже полученными данными
+                    break
+                else:
+                    print(f"⚠ Ошибка для {year}: {e}")
+                    continue
             except Exception as e:
                 print(f"⚠ Ошибка для {year}: {e}")
                 continue
@@ -318,6 +347,13 @@ class OpenMeteoAPI(WeatherDataSource):
         # Добавляем день года и год
         df['day_of_year'] = df['date'].dt.dayofyear
         df['year'] = df['date'].dt.year
+        
+        # Сохраняем в кэш
+        try:
+            df.to_parquet(cache_file)
+            print(f"✓ Open-Meteo: Данные сохранены в кэш")
+        except Exception as e:
+            print(f"⚠ Ошибка сохранения кэша: {e}")
         
         print(f"✓ Данные успешно получены и обработаны")
         return df

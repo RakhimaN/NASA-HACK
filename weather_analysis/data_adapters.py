@@ -5,16 +5,16 @@
 Адаптеры:
     1. GESDISCAdapter - NASA GES DISC (MERRA-2) для качества воздуха
        • AODANA - оптическая толщина аэрозоля
-       • BCSMASS - черный углерод (black carbon)
-       • DUSMASS - пыль (dust)
+       • BCSMASS - черный углерод
+       • DUSMASS - пыль
        
     2. CPTECAdapter - Бразильский CPTEC для грозовой активности
-       • CAPE - энергия конвекции (грозы, торнадо)
+       • CAPE - энергия конвекции
        • CIN - индекс подавления конвекции
        
     3. OpenMeteoEnhancedAdapter - Расширенный Open-Meteo API
-       • apparent_temperature - ощущаемая температура (wind chill/heat index)
-       • weathercode - коды погоды WMO (0-99)
+       • apparent_temperature - ощущаемая температура
+       • weathercode - коды погоды WMO
        • windgusts - порывы ветра
 
 Все адаптеры используют кэширование для оптимизации запросов.

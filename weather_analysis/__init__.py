@@ -33,6 +33,7 @@ Weather Analysis Module - NASA Hackathon Project v2.0
 __version__ = '2.0.0'
 __author__ = 'NASA Hackathon Team'
 
+import pandas as pd
 from .data_service import WeatherDataService
 from .statistical_analyzer import StatisticalAnalyzer
 from .config import WeatherConfig
@@ -48,7 +49,7 @@ def analyze_weather(latitude: float,
                    years_range: tuple = (1990, 2023),
                    detailed: bool = False,
                    units: dict = None,
-                   use_multi_source: bool = False) -> dict:
+                   use_multi_source: bool = True) -> dict:
     """
     Главная функция для анализа погодных условий
     
@@ -134,11 +135,30 @@ def analyze_weather(latitude: float,
             print(f"✓ Источники данных: {list(multi_data.keys())}")
             
             # Объединяем данные из всех источников
-            # Для упрощения берем первый доступный источник
-            # TODO: Реализовать полное слияние с консенсус-анализом
+            # Приоритет: NASA POWER (базовые параметры) → затем дополнения из других источников
             if multi_data:
-                historical_data = list(multi_data.values())[0]
+                # Ищем NASA POWER как основной источник (содержит все базовые параметры)
+                if 'nasa_power' in multi_data:
+                    historical_data = multi_data['nasa_power'].copy()
+                    print(f"✓ Основной источник: NASA POWER ({len(historical_data)} записей)")
+                elif 'openmeteo' in multi_data:
+                    historical_data = multi_data['openmeteo'].copy()
+                    print(f"✓ Основной источник: Open-Meteo ({len(historical_data)} записей)")
+                else:
+                    # Fallback - берем первый доступный с базовыми данными
+                    historical_data = list(multi_data.values())[0].copy()
+                    print(f"⚠ Основной источник: {list(multi_data.keys())[0]} (fallback)")
+                
+                # TODO: Мержим дополнительные параметры из других источников (GES DISC, CPTEC)
+                # if 'ges_disc' in multi_data:
+                #     # Добавляем air_quality, black_carbon, dust
+                #     pass
+                
                 source = f"Multi-source: {', '.join(multi_data.keys())}"
+                
+                # Добавляем day_of_year если его нет
+                if 'day_of_year' not in historical_data.columns and 'date' in historical_data.columns:
+                    historical_data['day_of_year'] = pd.to_datetime(historical_data['date']).dt.dayofyear
             else:
                 raise Exception("Не удалось получить данные ни из одного источника")
             
@@ -463,9 +483,6 @@ def analyze_weather_range(latitude: float,
     if 'precipitation' in aggregated_stats:
         print(f"💧 Средние осадки: {aggregated_stats['precipitation']['mean']:.1f} мм/день")
         print(f"   Всего за период: {aggregated_stats['precipitation']['total']:.1f} мм")
-    if 'wind' in aggregated_stats:
-        print(f"🌬️  Средний ветер: {aggregated_stats['wind']['mean']:.1f} м/с")
-        print(f"   Максимальный порыв: {aggregated_stats['wind']['max']:.1f} м/с")
     print(f"\n✨ РЕКОМЕНДАЦИИ:")
     for activity, date in best_days.items():
         activity_names = {

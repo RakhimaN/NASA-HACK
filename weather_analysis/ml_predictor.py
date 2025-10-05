@@ -30,200 +30,120 @@ class TrendAnalyzer:
     def analyze_temperature_trend(self, data: pd.DataFrame, 
                                   day_of_year: int = None) -> Dict:
         """
-        Анализировать тренд температуры
+        Анализирует температурный тренд для заданного дня года.
         
         Args:
-            data: DataFrame с историческими данными (должен содержать year, T2M)
-            day_of_year: Опционально - анализировать только для конкретного дня
+            data: DataFrame с историческими данными.
+            day_of_year: День года (1-366) для анализа. Если None, анализирует весь датасет.
             
         Returns:
-            Словарь с информацией о тренде:
-            {
-                'trend_direction': 'warming',  # warming, cooling, stable
-                'change_per_year': 0.05,       # °C в год
-                'change_per_decade': 0.5,      # °C за декаду
-                'confidence': 0.95,            # R² score
-                'p_value': 0.001,              # Статистическая значимость
-                'recent_years_avg': 16.5,      # Средняя за последние годы
-                'early_years_avg': 15.2        # Средняя за ранние годы
-            }
+            Словарь с результатом тренда.
         """
-        if 'T2M' not in data.columns or 'year' not in data.columns:
-            return {'error': 'Missing required columns: T2M, year'}
+        if day_of_year is not None:
+            day_data = data[data['day_of_year'] == day_of_year].copy()
+        else:
+            day_data = data.copy()
+            
+        if len(day_data) < self.trend_years: # Минимум данных для тренда
+            return {'trend_detected': False, 'message': 'Недостаточно данных для анализа тренда.'}
         
-        # Фильтруем по дню года если указан
-        if day_of_year:
-            data = data[data['day_of_year'] == day_of_year].copy()
+        # Используем данные за последние self.trend_years
+        latest_year = day_data['year'].max()
+        recent_data = day_data[day_data['year'] >= latest_year - self.trend_years].copy()
         
-        # Группируем по годам
-        yearly_avg = data.groupby('year')['T2M'].mean().reset_index()
+        if len(recent_data) < self.trend_years / 2: # Еще одна проверка на достаточность
+            return {'trend_detected': False, 'message': 'Недостаточно свежих данных для анализа тренда.'}
+
+        # Для анализа тренда используем среднюю температуру
+        X = recent_data[['year']].values
+        y = recent_data['T2M'].values # Средняя температура на 2м
         
-        if len(yearly_avg) < 5:
-            return {'error': 'Insufficient data for trend analysis'}
-        
-        # Берем последние N лет для тренда
-        recent_data = yearly_avg.tail(self.trend_years)
-        
-        # Линейная регрессия
-        X = recent_data['year'].values.reshape(-1, 1)
-        y = recent_data['T2M'].values
+        if len(np.unique(X)) < 2: # Нужно хотя бы 2 уникальных года
+             return {'trend_detected': False, 'message': 'Недостаточно уникальных лет для расчета тренда.'}
         
         self.model.fit(X, y)
+        slope = self.model.coef_[0] # Изменение температуры за год
         
-        # Вычисляем метрики
-        predictions = self.model.predict(X)
-        r_squared = self.model.score(X, y)
-        
-        # Статистическая значимость (p-value)
-        slope = self.model.coef_[0]
-        _, _, _, p_value, _ = stats.linregress(X.flatten(), y)
-        
-        # Изменение за год и декаду
-        change_per_year = slope
-        change_per_decade = slope * 10
-        
-        # Средние значения
-        recent_years_avg = recent_data['T2M'].mean()
-        early_data = yearly_avg.head(self.trend_years)
-        early_years_avg = early_data['T2M'].mean() if len(early_data) > 0 else recent_years_avg
-        
-        # Определяем направление
-        if abs(change_per_year) < 0.02:  # Менее 0.02°C в год считаем стабильным
-            trend_direction = 'stable'
-        elif change_per_year > 0:
-            trend_direction = 'warming'
-        else:
-            trend_direction = 'cooling'
-        
-        # Уровень достоверности
-        if p_value < 0.01 and r_squared > 0.7:
-            significance = 'high'
-        elif p_value < 0.05 and r_squared > 0.5:
-            significance = 'medium'
-        else:
-            significance = 'low'
+        # Проверка значимости тренда (упрощенно)
+        # Более строго - использовать p-value из статистики
+        trend_significant = abs(slope) > 0.05 # Если изменение > 0.05 градуса в год
         
         return {
-            'trend_direction': trend_direction,
-            'change_per_year': float(change_per_year),
-            'change_per_decade': float(change_per_decade),
-            'confidence': float(r_squared),
-            'p_value': float(p_value),
-            'significance': significance,
-            'recent_years_avg': float(recent_years_avg),
-            'early_years_avg': float(early_years_avg),
-            'total_change': float(recent_years_avg - early_years_avg),
-            'years_analyzed': len(recent_data)
+            'trend_detected': trend_significant,
+            'slope_c_per_year': float(slope),
+            'message': f'Температурный тренд: {slope:.2f}°C в год.'
         }
     
     def extrapolate_to_year(self, data: pd.DataFrame, 
-                           target_year: int,
-                           day_of_year: int = None) -> Dict:
+                            target_year: int,
+                            day_of_year: int = None) -> Dict:
         """
-        Экстраполировать температуру на будущий год
+        Экстраполирует температуру для заданного дня года в целевой год.
         
         Args:
-            data: Исторические данные
-            target_year: Год для прогноза (например, 2026)
-            day_of_year: Опционально - для конкретного дня
+            data: DataFrame с историческими данными.
+            target_year: Год, для которого нужно сделать экстраполяцию.
+            day_of_year: День года.
             
         Returns:
-            Словарь с прогнозом температуры
+            Словарь с экстраполированной температурой.
         """
-        # Анализируем тренд
-        trend = self.analyze_temperature_trend(data, day_of_year)
+        trend_analysis = self.analyze_temperature_trend(data, day_of_year)
         
-        if 'error' in trend:
-            return trend
+        if trend_analysis['trend_detected']:
+            slope = trend_analysis['slope_c_per_year']
+            
+            if day_of_year is not None:
+                day_data = data[data['day_of_year'] == day_of_year].copy()
+            else:
+                day_data = data.copy()
+                
+            # Средняя температура за последний год в данных
+            latest_year_data = day_data[day_data['year'] == day_data['year'].max()]
+            if latest_year_data.empty:
+                return {'extrapolated_temperature': None, 'message': 'Нет данных для экстраполяции.'}
+            
+            base_temp = latest_year_data['T2M'].mean()
+            years_ahead = target_year - latest_year_data['year'].max()
+            
+            extrapolated_temp = base_temp + (slope * years_ahead)
+            
+            return {
+                'extrapolated_temperature': float(extrapolated_temp),
+                'message': f'Экстраполированная температура на {target_year} год: {extrapolated_temp:.2f}°C.'
+            }
         
-        # Базовая статистика (без тренда)
-        if day_of_year:
-            day_data = data[data['day_of_year'] == day_of_year]
-        else:
-            day_data = data
-        
-        base_mean = day_data['T2M'].mean()
-        base_std = day_data['T2M'].std()
-        
-        # Последний год в данных
-        last_year = data['year'].max()
-        years_ahead = target_year - last_year
-        
-        # Экстраполяция с учетом тренда
-        temperature_adjustment = trend['change_per_year'] * years_ahead
-        adjusted_mean = base_mean + temperature_adjustment
-        
-        # Диапазон прогноза (с учетом неопределенности)
-        confidence_multiplier = 1 + (years_ahead * 0.1)  # +10% неопределенности за год
-        adjusted_std = base_std * confidence_multiplier
-        
-        return {
-            'target_year': target_year,
-            'base_temperature': float(base_mean),
-            'predicted_temperature': float(adjusted_mean),
-            'temperature_adjustment': float(temperature_adjustment),
-            'prediction_range': {
-                'min': float(adjusted_mean - adjusted_std),
-                'max': float(adjusted_mean + adjusted_std),
-                'std': float(adjusted_std)
-            },
-            'trend': trend,
-            'years_ahead': years_ahead,
-            'confidence_note': f'Прогноз на {years_ahead} лет вперед имеет {"высокую" if years_ahead < 5 else "среднюю" if years_ahead < 10 else "низкую"} достоверность'
-        }
+        return {'extrapolated_temperature': None, 'message': 'Тренд не обнаружен для экстраполяции.'}
     
     def adjust_probabilities_for_trend(self, base_probabilities: Dict,
-                                      trend_analysis: Dict,
-                                      years_ahead: int) -> Dict:
+                                       trend_analysis: Dict,
+                                       years_ahead: int) -> Dict:
         """
-        Скорректировать вероятности с учетом тренда
-        
-        Args:
-            base_probabilities: Базовые вероятности (из статистического анализа)
-            trend_analysis: Результат analyze_temperature_trend
-            years_ahead: На сколько лет вперед
-            
-        Returns:
-            Скорректированные вероятности
+        Корректирует вероятности на основе обнаруженного тренда.
+        Это упрощенная эвристика.
         """
-        if trend_analysis.get('significance') == 'low':
-            # Если тренд незначителен, не корректируем
-            return base_probabilities.copy()
+        adjusted_probs = base_probabilities.copy()
         
-        adjusted = base_probabilities.copy()
-        
-        # Изменение температуры
-        temp_change = trend_analysis['change_per_year'] * years_ahead
-        
-        # Корректировка для warming тренда
-        if trend_analysis['trend_direction'] == 'warming' and abs(temp_change) > 0.5:
-            # Увеличиваем вероятность жары
-            if 'very_hot' in adjusted:
-                adjusted['very_hot'] = min(1.0, adjusted['very_hot'] + 0.05 * years_ahead)
-            if 'hot' in adjusted:
-                adjusted['hot'] = min(1.0, adjusted['hot'] + 0.03 * years_ahead)
+        if trend_analysis['trend_detected']:
+            slope = trend_analysis['slope_c_per_year']
             
-            # Уменьшаем вероятность холода
-            if 'very_cold' in adjusted:
-                adjusted['very_cold'] = max(0.0, adjusted['very_cold'] - 0.05 * years_ahead)
-            if 'cold' in adjusted:
-                adjusted['cold'] = max(0.0, adjusted['cold'] - 0.03 * years_ahead)
-        
-        # Корректировка для cooling тренда
-        elif trend_analysis['trend_direction'] == 'cooling' and abs(temp_change) > 0.5:
-            # Увеличиваем вероятность холода
-            if 'very_cold' in adjusted:
-                adjusted['very_cold'] = min(1.0, adjusted['very_cold'] + 0.05 * years_ahead)
-            if 'cold' in adjusted:
-                adjusted['cold'] = min(1.0, adjusted['cold'] + 0.03 * years_ahead)
+            # Если тренд положительный (потепление)
+            if slope > 0:
+                # Увеличиваем вероятность жарких дней, уменьшаем холодных
+                adjusted_probs['very_hot'] = min(1.0, adjusted_probs.get('very_hot', 0) + (slope * years_ahead * 0.02))
+                adjusted_probs['hot'] = min(1.0, adjusted_probs.get('hot', 0) + (slope * years_ahead * 0.01))
+                adjusted_probs['very_cold'] = max(0.0, adjusted_probs.get('very_cold', 0) - (slope * years_ahead * 0.01))
+                adjusted_probs['cold'] = max(0.0, adjusted_probs.get('cold', 0) - (slope * years_ahead * 0.005))
             
-            # Уменьшаем вероятность жары
-            if 'very_hot' in adjusted:
-                adjusted['very_hot'] = max(0.0, adjusted['very_hot'] - 0.05 * years_ahead)
-            if 'hot' in adjusted:
-                adjusted['hot'] = max(0.0, adjusted['hot'] - 0.03 * years_ahead)
+            # Если тренд отрицательный (похолодание)
+            elif slope < 0:
+                # Увеличиваем вероятность холодных дней, уменьшаем жарких
+                adjusted_probs['very_cold'] = min(1.0, adjusted_probs.get('very_cold', 0) + (abs(slope) * years_ahead * 0.02))
+                adjusted_probs['cold'] = min(1.0, adjusted_probs.get('cold', 0) + (abs(slope) * years_ahead * 0.01))
+                adjusted_probs['very_hot'] = max(0.0, adjusted_probs.get('very_hot', 0) - (abs(slope) * years_ahead * 0.01))
+                adjusted_probs['hot'] = max(0.0, adjusted_probs.get('hot', 0) - (abs(slope) * years_ahead * 0.005))
         
-        return adjusted
+        return adjusted_probs
 
 
 class WeatherClassifier:
@@ -239,57 +159,85 @@ class WeatherClassifier:
             random_state=42
         )
         self.is_trained = False
+        self.features = [
+            'T2M', 'PRECTOTCORR', 'WS2M', 'RH2M',
+            'CLOUD_AMT', 'ALLSKY_SFC_SW_DWN', 'day_of_year'
+        ]
+        self.target = 'is_comfortable' # Целевая переменная
     
     def prepare_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Подготовить признаки для ML модели
-        
-        Features:
-        - Temperature (mean, min, max)
-        - Precipitation
-        - Wind speed
-        - Humidity
-        - Day of year (cyclical encoding)
-        - Latitude, longitude
+        Подготавливает признаки для обучения модели.
+        Добавляет целевую переменную 'is_comfortable'.
         """
-        features = data.copy()
+        df = data.copy()
         
-        # Циклическое кодирование дня года
-        features['day_sin'] = np.sin(2 * np.pi * features['day_of_year'] / 365)
-        features['day_cos'] = np.cos(2 * np.pi * features['day_of_year'] / 365)
+        # Пример простой логики комфорта
+        df['is_comfortable'] = ((df['T2M'] >= 15) & (df['T2M'] <= 25) & 
+                                 (df['RH2M'] >= 30) & (df['RH2M'] <= 70) & 
+                                 (df['WS2M'] <= 5)).astype(int)
         
-        # TODO: Добавить больше признаков
+        # Удаляем строки с NaN в признаках или целевой переменной
+        df = df.dropna(subset=self.features + [self.target])
         
-        return features
+        return df
     
-    def train(self, X_train, y_train):
-        """Обучить модель"""
-        self.model.fit(X_train, y_train)
-        self.is_trained = True
-        print("✓ Модель обучена")
+    def train(self, X_train: pd.DataFrame, y_train: pd.Series):
+        """
+        Обучает модель классификатора.
+        """
+        if X_train.empty or y_train.empty:
+            print("⚠ Недостаточно данных для обучения классификатора.")
+            return
+            
+        try:
+            self.model.fit(X_train, y_train)
+            self.is_trained = True
+            print("✅ Модель классификатора успешно обучена.")
+        except Exception as e:
+            print(f"❌ Ошибка обучения модели: {e}")
+            self.is_trained = False
     
-    def predict_probabilities(self, X):
-        """Получить вероятности классов"""
+    def predict_probabilities(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Предсказывает вероятности классов для новых данных.
+        """
         if not self.is_trained:
-            raise Exception("Модель не обучена! Вызовите train() сначала")
+            print("⚠ Модель не обучена. Возвращаем случайные вероятности.")
+            # Возвращаем равномерное распределение, если модель не обучена
+            return np.full(len(X), 0.5) 
         
-        return self.model.predict_proba(X)
+        try:
+            # predict_proba возвращает вероятности для каждого класса [prob_class_0, prob_class_1]
+            return self.model.predict_proba(X)[:, 1] # Вероятность класса 1 (комфортно)
+        except Exception as e:
+            print(f"❌ Ошибка предсказания: {e}")
+            return np.full(len(X), 0.5)
     
     def save(self, filepath: str):
         """
-        Сохранить модель"""
+        Сохраняет обученную модель на диск.
+        """
         if not self.is_trained:
-            raise Exception("Нечего сохранять - модель не обучена")
-        
-        joblib.dump(self.model, filepath)
-        print(f"✓ Модель сохранена в {filepath}")
+            print("⚠ Модель не обучена, нечего сохранять.")
+            return
+        try:
+            joblib.dump(self.model, filepath)
+            print(f"✅ Модель классификатора сохранена в {filepath}")
+        except Exception as e:
+            print(f"❌ Ошибка сохранения модели: {e}")
     
     def load(self, filepath: str):
         """
-        Загрузить модель"""
-        self.model = joblib.load(filepath)
-        self.is_trained = True
-        print(f"✓ Модель загружена из {filepath}")
+        Загружает модель с диска.
+        """
+        try:
+            self.model = joblib.load(filepath)
+            self.is_trained = True
+            print(f"✅ Модель классификатора загружена из {filepath}")
+        except Exception as e:
+            print(f"❌ Ошибка загрузки модели: {e}")
+            self.is_trained = False
 
 
 class MLPredictor:
@@ -301,24 +249,50 @@ class MLPredictor:
     def __init__(self):
         self.trend_analyzer = TrendAnalyzer()
         self.classifier = WeatherClassifier()
-    
+        self.model_path = Path('./ml_models/weather_classifier.joblib')
+        self.model_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Попытка загрузить модель при инициализации
+        if self.model_path.exists():
+            self.classifier.load(str(self.model_path))
+
     def analyze_with_ml(self, data: pd.DataFrame, day_of_year: int) -> dict:
         """
-        Анализ с использованием ML
-        Возвращает вероятности + тренды
+        Выполняет ML-анализ данных: тренды и классификация.
         """
-        # TODO: Реализовать комбинированный анализ
+        results = {}
         
-        return {
-            'probabilities': {},  # Вероятности от ML модели
-            'trends': {},  # Информация о трендах
-            'forecast': {}  # Прогноз на будущее
-        }
+        # Анализ тренда температуры
+        trend_result = self.trend_analyzer.analyze_temperature_trend(data, day_of_year)
+        results['temperature_trend'] = trend_result
+        
+        # Классификация комфортности дня
+        prepared_data = self.classifier.prepare_features(data)
+        if not prepared_data.empty:
+            X_day = prepared_data[prepared_data['day_of_year'] == day_of_year][self.classifier.features]
+            if not X_day.empty:
+                comfort_prob = self.classifier.predict_probabilities(X_day).mean() # Средняя вероятность комфорта
+                results['comfort_probability_ml'] = float(comfort_prob)
+            else:
+                results['comfort_probability_ml'] = None
+        else:
+            results['comfort_probability_ml'] = None
 
+        return results
 
-# =============================================================================
-# ПРИМЕР ИСПОЛЬЗОВАНИЯ (когда будет реализовано)
-# =============================================================================
+    def train_classifier(self, data: pd.DataFrame):
+        """
+        Обучает классификатор на всем доступном датасете.
+        """
+        prepared_data = self.classifier.prepare_features(data)
+        if not prepared_data.empty:
+            X_train = prepared_data[self.classifier.features]
+            y_train = prepared_data[self.classifier.target]
+            self.classifier.train(X_train, y_train)
+            self.classifier.save(str(self.model_path))
+        else:
+            print("⚠ Недостаточно данных для обучения ML классификатора.")
+
 
 if __name__ == "__main__":
     print("🤖 ML модуль - ЗАГОТОВКА")

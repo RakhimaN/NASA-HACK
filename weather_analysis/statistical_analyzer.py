@@ -227,7 +227,9 @@ class StatisticalAnalyzer:
         return probabilities
     
     def _analyze_comfort(self, day_data: pd.DataFrame) -> Dict:
-        """Анализ индекса комфорта (учитывает температуру + влажность)"""
+        """
+        Анализ индекса комфорта (учитывает температуру + влажность)
+        """
         probabilities = {}
         
         temp = day_data['T2M']
@@ -268,7 +270,8 @@ class StatisticalAnalyzer:
         return probabilities
     
     def _analyze_cloudiness(self, day_data: pd.DataFrame) -> Dict:
-        """Анализ облачности"""
+        """
+        Анализ облачности"""
         probabilities = {}
         
         cloud = day_data['CLOUD_AMT']
@@ -294,7 +297,8 @@ class StatisticalAnalyzer:
         return probabilities
     
     def _analyze_uv_index(self, day_data: pd.DataFrame) -> Dict:
-        """Анализ UV индекса"""
+        """
+        Анализ UV индекса"""
         probabilities = {}
         
         uv = day_data['ALLSKY_SFC_UV_INDEX']
@@ -356,7 +360,8 @@ class StatisticalAnalyzer:
         return probabilities
     
     def _analyze_snow(self, day_data: pd.DataFrame) -> Dict:
-        """Анализ снежного покрова"""
+        """
+        Анализ снежного покрова"""
         probabilities = {}
         
         snow = day_data['SNODP']
@@ -387,7 +392,8 @@ class StatisticalAnalyzer:
         return probabilities
     
     def _calculate_statistics(self, day_data: pd.DataFrame) -> Dict:
-        """Рассчитать базовую статистику для всех параметров"""
+        """
+        Рассчитать базовую статистику для всех параметров"""
         statistics = {}
         
         # Температура
@@ -767,6 +773,8 @@ class StatisticalAnalyzer:
     
     @staticmethod
     def _day_to_date_string(day_of_year: int) -> str:
-        """Конвертировать день года в строку с датой (пример для 2024)"""
+        """
+        Конвертировать день года в строку с датой (пример для 2024)
+        """
         date = datetime(2024, 1, 1) + pd.Timedelta(days=day_of_year - 1)
         return date.strftime('%B %d')
